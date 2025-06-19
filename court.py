@@ -3,80 +3,115 @@ import datetime
 import requests
 
 import pandas as pd
+import numpy as np
 
 from config import clubs_info
 
 
 class TennisChecker:
-    def __init__(self, target_date_range, target_time_range, venue_filter=[]):
+    def __init__(self, target_date_range, target_time_range, venue_filter, minimum_booking_time):
         self.target_date_range = target_date_range
         self.target_time_range = target_time_range
         self.venue_filter = venue_filter
+        self.court_availability = {}
 
     def create_venue_coverage(self):
-
         current_time = datetime.datetime.now()
         start_date_str = self.target_date_range[0].strftime("%Y-%m-%d")
         end_date_str = self.target_date_range[-1].strftime("%Y-%m-%d")
-        available_courts = {}
 
         for club, club_details in clubs_info.items():
-
             for venue_name, venue_details in club_details.items():
-                court_url = venue_details["court_url"]
-                base_url = venue_details["base_url"]
-                role_id = venue_details["role_id"]
+                if venue_name in self.venue_filter:
+                    court_url = venue_details["court_url"]
+                    base_url = venue_details["base_url"]
+                    role_id = venue_details["role_id"]
 
-                response = requests.get(
-                    f"https://{court_url}.{base_url}/v0/VenueBooking/{court_url}_{base_url.replace('.', '_')}/GetVenueSessions?resourceID=&startDate={start_date_str}&endDate={end_date_str}&roleId={role_id}",
-                    verify=False,
-                )
+                    if club == 'Newham Parks':
+                        response = requests.get(
+                            f"https://{court_url}.{base_url}/v0/VenueBooking/{court_url}_{base_url.replace('.', '_')}/GetVenueSessions?resourceID=&startDate={start_date_str}&endDate={end_date_str}&roleId={role_id}",
+                            verify=False,
+                        )
+                    elif club == 'Southwark':
+                        response = requests.get(
+                            f"https://{base_url}/v0/VenueBooking/{venue_name.replace(' ', '')}{club.replace(' ', '')}/GetVenueSessions?resourceID=&startDate={start_date_str}&endDate={end_date_str}&roleId=&_=1750339892141",
+                            verify=False)
 
-                booking_data = response.json()
-                print(booking_data)
-                timezone = booking_data["TimeZone"]
-                earliest_start = int(booking_data["EarliestStartTime"] / 60)
-                latest_end = int((booking_data["LatestEndTime"] - 60) / 60)
+                    booking_data = response.json()
+                    timezone = booking_data["TimeZone"]
+                    earliest_start = int(booking_data["EarliestStartTime"] / 60)
+                    minimum_interval = booking_data['MinimumInterval']
+                    latest_end = (booking_data["LatestEndTime"] - minimum_interval) / 60
+                    print('CHECK BOOKING DATA')
+                    print(booking_data)
+                    print(earliest_start)
+                    print(latest_end)
 
-                for booking_date in self.target_date_range:
-                    time_index = pd.date_range(
-                        start=f"{booking_date} {earliest_start}:00",
-                        end=f"{booking_date} {latest_end}:00",
-                        freq="h",
-                    )
-                    df = pd.DataFrame({"Time": time_index})
-                    df = df.set_index("Time")
-                    if booking_date not in available_courts:
-                        available_courts[booking_date.strftime('%Y-%m-%d')] = {}
-                    available_courts[booking_date.strftime('%Y-%m-%d')][venue_name] = df
+                    for booking_date in self.target_date_range:
+                        date_str = booking_date.strftime('%Y-%m-%d')
+                        # end_hh, end_mm = int(latest_end), int(str(latest_end).split(".")[1])
+                        # if end_mm == 5:
+                        #     end_mm = "30"
+                        # else:
+                        #     end_mm = "00"
+                        time_index = pd.date_range(
+                            start=f"{date_str} {earliest_start}:00",
+                            end=f"{date_str} {latest_end}:00",
+                            freq=f"{str(minimum_interval)}min"
+                        )
+                        df = pd.DataFrame({"Time": time_index}).set_index("Time")
 
-                for court_details in booking_data["Resources"]:
-                    court_no = court_details["Name"]  # NOTE: This is the court number
-                    print(court_no)
-                    for booking_date_summary in court_details["Days"]:
-                        booking_date = booking_date_summary["Date"][:10]
-                        for court_session in booking_date_summary["Sessions"]:
-                #             # print(court_session)  # NOTE: court session is an individual court booking session
-                            session_start = int(court_session["StartTime"] / 60)
-                            session_end = int(court_session["EndTime"] / 60)
-                            if court_session["Capacity"] == 1:
-                                print('FREE SESSION: making changes to the dict now')
-                                print(booking_date)
-                                print(venue_name)
+                        if date_str not in self.court_availability:
+                            self.court_availability[date_str] = {}
 
-                                df = available_courts[booking_date][venue_name]
-                                for session_time in range(session_start, session_end):
-                                    if court_no not in df.columns:
-                                        df[court_no] = 0
-                                    df.loc[
-                                        f"{booking_date} {session_time:02d}:00:00",
-                                        court_no,
-                                    ] += 1
-                        print(available_courts[booking_date])
+                        self.court_availability[date_str][venue_name] = df.copy()  # IMPORTANT: .copy() avoids mutating same df
 
-                #
-                #             print(available_courts[booking_date][venue_name])
-                #
-                #                 # available_courts[booking_date][venue_name] = df
-                # # print('available courts')
-                # # print(available_courts)
+                    # Fill in court availability
+                    for court_details in booking_data["Resources"]:
+                        court_no = court_details["Name"]
+                        for booking_date_summary in court_details["Days"]:
+                            booking_date_str = booking_date_summary["Date"][:10]
+                            for court_session in booking_date_summary["Sessions"]:
+                                session_start = court_session["StartTime"] / 60
+                                session_end = court_session["EndTime"] / 60
+                                if court_session["Capacity"] == 1:
+                                    df = self.court_availability[booking_date_str][venue_name]
+                                    for session_time in np.arange(session_start, session_end, minimum_interval/60):
+                                        session_hh, session_mm = int(session_time), int(str(session_time).split(".")[1])
+                                        if session_mm == 5:
+                                            session_mm = "30"
+                                        else:
+                                            session_mm = "00"
+                                        if court_no not in df.columns:
+                                            df[court_no] = 0
+                                        df.loc[f"{booking_date_str} {session_hh:02d}:{session_mm}:00", court_no] += 1
+
+        return self.court_availability
+
+
+    def availability_filter(self, court_availability):
+        # print(court_availability)
+        print(self.target_date_range)
+        print(self.target_time_range)
+        requested_availability = {}
+
+        for target_date in self.target_date_range:
+            target_index_time_range = [f"{target_date} {target_time:02d}:00:00" for target_time in self.target_time_range]
+            print(target_index_time_range)
+            all_courts = court_availability[target_date.strftime('%Y-%m-%d')]
+            filtered_courts = {k: v[v.index.isin(target_index_time_range)] for k, v in all_courts.items() if k in self.venue_filter}
+            filtered_courts = {k: v.loc[~(v == 0).all(axis=1), ~(v == 0).all(axis=0)] for k, v in filtered_courts.items()}
+            filtered_courts = {k: v for k, v in filtered_courts.items() if not v.empty}
+            print('filtered courts')
+            print(filtered_courts)
+            requested_availability[target_date] = filtered_courts
+        return requested_availability
+
+
+
+
+
+
+
+
+
