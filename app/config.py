@@ -62,7 +62,7 @@ clubs_info = {
             "booking_window": 14,
             "role_id": "&_=1750070208037",
             "booking_refresh": 21,
-        }
+        },
     },
     "Southwark": {
         "Burgess Park": {
