@@ -4,9 +4,15 @@ import requests
 import logging
 import pandas as pd
 import numpy as np
+import urllib3
 
-from config import clubs_info
+from app.config import clubs_info
+from app.logger import setup_logger
 
+logger = setup_logger(name="Get A Court", log_path=r"./logs/court_booking.log", level=logging.INFO)
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+logger.warning(f"Insecure Warning Suppressed.")
 
 class TennisChecker:
     def __init__(
@@ -19,10 +25,10 @@ class TennisChecker:
 
     def queries_summary(self):
         print('The queries_summary')
-        target_dates = ', '.join([td.strftime('%e %b') for td in self.target_date_range])
-        print(target_dates)
-        print(self.target_time_range)
-        print(self.venue_filter)
+        target_dates = '|'.join([td.strftime('%e %b') for td in self.target_date_range])
+        target_courts = '|'.join(self.venue_filter)
+        print(f'🗓️🎾📍️Gathering Court Data for {target_dates} from {self.target_time_range[0]} to '
+              f'{self.target_time_range[-1]} at {target_courts}')
 
     def create_venue_coverage(self):
         current_time = datetime.datetime.now()
@@ -36,34 +42,21 @@ class TennisChecker:
                     base_url = venue_details["base_url"]
                     role_id = venue_details["role_id"]
 
-                    if club == "Newham Parks":
-                        response = requests.get(
-                            f"https://{court_url}.{base_url}/v0/VenueBooking/{court_url}_{base_url.replace('.', '_')}/GetVenueSessions?resourceID=&startDate={start_date_str}&endDate={end_date_str}&roleId={role_id}",
-                            verify=False,
-                        )
-                    elif club == "Southwark":
-                        response = requests.get(
-                            f"https://{base_url}/v0/VenueBooking/{venue_name.replace(' ', '')}{club.replace(' ', '')}/GetVenueSessions?resourceID=&startDate={start_date_str}&endDate={end_date_str}&roleId=&_=1750339892141",
-                            verify=False,
-                        )
+                    response = requests.get(
+                        f"https://{court_url}.{base_url}/v0/VenueBooking/{court_url}_{base_url.replace('.', '_')}/GetVenueSessions?resourceID=&startDate={start_date_str}&endDate={end_date_str}&roleId={role_id}",
+                        verify=False,
+                    )
 
                     booking_data = response.json()
+                    logger.info(f"Raw Booking data for {venue_name}: {booking_data}")
+
                     timezone = booking_data["TimeZone"]
                     earliest_start = int(booking_data["EarliestStartTime"] / 60)
                     minimum_interval = booking_data["MinimumInterval"]
                     latest_end = (booking_data["LatestEndTime"] - minimum_interval) / 60
-                    print("CHECK BOOKING DATA")
-                    print(booking_data)
-                    print(earliest_start)
-                    print(latest_end)
 
                     for booking_date in self.target_date_range:
                         date_str = booking_date.strftime("%Y-%m-%d")
-                        # end_hh, end_mm = int(latest_end), int(str(latest_end).split(".")[1])
-                        # if end_mm == 5:
-                        #     end_mm = "30"
-                        # else:
-                        #     end_mm = "00"
                         time_index = pd.date_range(
                             start=f"{date_str} {earliest_start}:00",
                             end=f"{date_str} {latest_end}:00",
@@ -91,6 +84,7 @@ class TennisChecker:
                                         venue_name
                                     ]
 
+
                                     for session_time in np.arange(
                                             session_start,
                                             session_end,
@@ -116,11 +110,10 @@ class TennisChecker:
         requested_availability = {}
 
         for target_date in self.target_date_range:
-            target_index_time_range = [
+            target_index_time_range = pd.to_datetime([
                 f"{target_date} {target_time:02d}:00:00"
                 for target_time in self.target_time_range
-            ]
-            print(target_index_time_range)
+            ])
             all_courts = court_availability[target_date.strftime("%Y-%m-%d")]
             filtered_courts = {
                 k: v[v.index.isin(target_index_time_range)]
