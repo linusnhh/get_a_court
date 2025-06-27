@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import urllib3
 
-from app.config import clubs_info
+from app.config import clubspark_info
 from app.logger import setup_logger
 
 logger = setup_logger(name="Get A Court", log_path=r"./logs/court_booking.log", level=logging.INFO)
@@ -30,12 +30,12 @@ class TennisChecker:
         print(f'🗓️🎾📍️Gathering Court Data for {target_dates} from {self.target_time_range[0]} to '
               f'{self.target_time_range[-1]} at {target_courts}')
 
-    def create_venue_coverage(self):
+    def create_clubspark_coverage(self):
         current_time = datetime.datetime.now()
         start_date_str = self.target_date_range[0].strftime("%Y-%m-%d")
         end_date_str = self.target_date_range[-1].strftime("%Y-%m-%d")
 
-        for club, club_details in clubs_info.items():
+        for club, club_details in clubspark_info.items():
             for venue_name, venue_details in club_details.items():
                 if venue_name in self.venue_filter:
                     court_url = venue_details["court_url"]
@@ -105,6 +105,13 @@ class TennisChecker:
                                         ] += 1
 
         return self.court_availability
+
+
+    def create_courtside_coverage(self):
+        current_time = datetime.datetime.now()
+        start_date_str = self.target_date_range[0].strftime("%Y-%m-%d")
+        end_date_str = self.target_date_range[-1].strftime("%Y-%m-%d")
+
 
     def availability_filter(self, court_availability):
         requested_availability = {}

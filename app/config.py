@@ -1,4 +1,4 @@
-clubs_info = {
+clubspark_info = {
     "Newham Parks": {
         "Stratford": {
             "base_url": "newhamparkstennis.org.uk",
@@ -74,3 +74,5 @@ clubs_info = {
         }
     },
 }
+
+courtside_info = {"Tower hamlets": {"Bethnal Green Gardens": {"": ""}}}
