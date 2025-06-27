@@ -9,8 +9,7 @@
 - 
 
 ### Feature
-- [ ] Taking 30 minutes logic into account
-- [ ]
+- [ ] Taking 30 minutes logic into account due to Southwark park
 
 ### Code
 - [ ] Implement logging
@@ -20,7 +19,6 @@
 
 ## 📌 Important Notes
 ### Known Issues
-- [ ] Currently only 
 
 ### Logging Notes
 ✅ **logger.debug() – For development & low-level internal info**
